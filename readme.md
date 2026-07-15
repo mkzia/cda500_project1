@@ -105,5 +105,5 @@ Secrets committed in this repo are for **local sandbox teaching purposes only**.
 
 Restart it
 ```
-docker compose up -d
+docker compose up -d streamlit
 ```
