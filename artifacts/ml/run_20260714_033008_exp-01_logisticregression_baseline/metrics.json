@@ -1,0 +1,8 @@
+{
+  "val_accuracy": 0.898471615720524,
+  "val_macro_f1": 0.8867066241589886,
+  "val_mean_penalty": 1.236353711790393,
+  "val_precision_macro": 0.8907084572959619,
+  "val_recall_macro": 0.8831436386724363,
+  "val_total_penalty": 2265.0
+}

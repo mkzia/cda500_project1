@@ -1,0 +1,7 @@
+{
+  "model_family": "LightGBM",
+  "pickup_location_id": 237,
+  "q25": 36.0,
+  "q75": 349.0,
+  "tuned": "False"
+}

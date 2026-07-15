@@ -1,0 +1,241 @@
+x-airflow-common-env: &airflow-common-env
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://airflow_user:airflow_pass@airflow-metadata-db:5432/airflow_metadata
+  AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+
+  # Teaching-only local secrets.
+  AIRFLOW__CORE__FERNET_KEY: 81HqDtbqAywKSOumSha3BhWNOdQ26slT6K0YaZeZyPs=
+  AIRFLOW__API__SECRET_KEY: a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
+  AIRFLOW__API_AUTH__JWT_SECRET: super_secret_shared_jwt_token_must_be_long_64_bytes_abc123xyz_padding
+
+  # Simple Auth Manager for local teaching use.
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:admin
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/auth/simple_auth_manager_passwords.json.generated
+
+  JAVA_HOME: /opt/java/openjdk
+  SPARK_HOME: /home/airflow/.local/lib/python3.11/site-packages/pyspark
+  PYTHONPATH: /opt/airflow
+
+x-airflow-common-volumes: &airflow-common-volumes
+  - ./airflow_auth:/opt/airflow/auth:rw
+  - ./artifacts:/opt/airflow/artifacts:rw
+  - ./config:/opt/airflow/config:rw
+  - ./dags:/opt/airflow/dags:rw
+  - ./data:/opt/airflow/data:rw
+  - ./jobs:/opt/airflow/jobs:rw
+  - ./logs:/opt/airflow/logs:rw
+  - ./models:/opt/airflow/models:rw
+  - ./notebooks:/opt/airflow/notebooks:rw
+  - ./sql:/opt/airflow/sql:rw
+
+services:
+  airflow-metadata-db:
+    image: postgres:17-alpine
+    container_name: airflow_metadata_postgres
+    environment:
+      - POSTGRES_DB=airflow_metadata
+      - POSTGRES_USER=airflow_user
+      - POSTGRES_PASSWORD=airflow_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - platform_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U airflow_user -d airflow_metadata" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  airflow-init:
+    build:
+      context: ./airflow-image
+      dockerfile: Dockerfile
+    image: airflow-spark-iceberg-teaching:3.2.2-python3.11
+    container_name: airflow_init_job
+    depends_on:
+      airflow-metadata-db:
+        condition: service_healthy
+    environment:
+      <<: *airflow-common-env
+    volumes: *airflow-common-volumes
+    command: >
+      bash -c '
+        mkdir -p /opt/airflow/auth /opt/airflow/data/incoming /opt/airflow/data/warehouse /opt/airflow/logs &&
+        if [ ! -f /opt/airflow/auth/simple_auth_manager_passwords.json.generated ]; then
+          echo "{\"admin\": \"admin\"}" > /opt/airflow/auth/simple_auth_manager_passwords.json.generated;
+        fi &&
+        airflow db migrate
+      '
+    networks:
+      - platform_network
+    restart: "no"
+
+  airflow-webserver:
+    image: airflow-spark-iceberg-teaching:3.2.2-python3.11
+    pull_policy: never
+    container_name: airflow_webserver
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *airflow-common-env
+    ports:
+      - "8080:8080"
+    volumes: *airflow-common-volumes
+    command: airflow api-server
+    networks:
+      - platform_network
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://localhost:8080/api/v2/monitor/health\", timeout=3).getcode() == 200 else 1)'" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: always
+
+  airflow-scheduler:
+    image: airflow-spark-iceberg-teaching:3.2.2-python3.11
+    pull_policy: never
+    container_name: airflow_scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-webserver:
+        condition: service_healthy
+    environment:
+      <<: *airflow-common-env
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
+    volumes: *airflow-common-volumes
+    command: airflow scheduler
+    networks:
+      - platform_network
+    restart: always
+
+  airflow-dag-processor:
+    image: airflow-spark-iceberg-teaching:3.2.2-python3.11
+    pull_policy: never
+    container_name: airflow_dag_processor
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-webserver:
+        condition: service_healthy
+    environment:
+      <<: *airflow-common-env
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
+      AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: "5"
+    volumes: *airflow-common-volumes
+    command: airflow dag-processor
+    networks:
+      - platform_network
+    restart: always
+
+  mock-lambda-watcher:
+    image: python:3.11-slim
+    container_name: mock_lambda_watcher
+    depends_on:
+      airflow-webserver:
+        condition: service_healthy
+    volumes:
+      - ./sftp_mock_daemon.py:/app/sftp_mock_daemon.py
+      - ./data:/opt/airflow/data:rw
+    working_dir: /app
+    environment:
+      AIRFLOW_BASE_URL: http://airflow-webserver:8080
+      AIRFLOW_USERNAME: admin
+      AIRFLOW_PASSWORD: admin
+      WATCH_DIRECTORY: /opt/airflow/data/incoming
+      TARGET_ASSET_URI: file:///opt/airflow/data/incoming/taxi_data_drop
+    networks:
+      - platform_network
+    command: >
+      sh -c "pip install --no-cache-dir watchdog requests &&
+             python sftp_mock_daemon.py"
+    restart: always
+
+  jupyter-notebook:
+    image: airflow-spark-iceberg-teaching:3.2.2-python3.11
+    pull_policy: never
+    container_name: jupyter_notebook
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *airflow-common-env
+      JUPYTER_TOKEN: "dev_token"
+    ports:
+      - "8888:8888"
+    volumes: *airflow-common-volumes
+    working_dir: /opt/airflow
+    entrypoint: []
+    command: >
+      jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+    networks:
+      - platform_network
+    restart: unless-stopped
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: fastapi/Dockerfile
+    container_name: fastapi
+    environment:
+      POSTGRES_CACHE_HOST: operational_cache_postgres
+      POSTGRES_CACHE_PORT: 5432
+      POSTGRES_CACHE_DB: operational_cache
+      POSTGRES_CACHE_USER: cache_user
+      POSTGRES_CACHE_PASSWORD: cache_password
+      PREDICTIONS_DIR: /opt/airflow/data/predictions/hourly_demand_predictions
+    depends_on:
+      operational-cache-postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/opt/airflow/data
+    ports:
+      - "8000:8000"
+    networks:
+      - platform_network
+
+  streamlit:
+    build:
+      context: .
+      dockerfile: streamlit/Dockerfile
+    container_name: streamlit
+    environment:
+      API_BASE_URL: http://fastapi:8000
+      PICKUP_LOCATION_ID: "237"
+    depends_on:
+      - fastapi
+    ports:
+      - "8501:8501"
+    networks:
+      - platform_network
+
+  operational-cache-postgres:
+    image: postgres:16-alpine
+    container_name: operational_cache_postgres
+    environment:
+      POSTGRES_USER: cache_user
+      POSTGRES_PASSWORD: cache_password
+      POSTGRES_DB: operational_cache
+    ports:
+      - "5433:5432"
+    networks:
+      - platform_network
+    volumes:
+      - operational_cache_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U cache_user -d operational_cache" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+volumes:
+  db_data:
+  operational_cache_data:
+
+networks:
+  platform_network:
+    driver: bridge

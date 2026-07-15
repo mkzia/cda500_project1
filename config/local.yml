@@ -1,0 +1,16 @@
+environment: local
+
+catalog:
+  spark_catalog_name: nyc
+  logical_name: nyc_catalog
+  type: hadoop
+  warehouse_path: /opt/airflow/data/warehouse
+
+storage:
+  incoming_directory: /opt/airflow/data/incoming
+  warehouse_directory: /opt/airflow/data/warehouse
+
+assets:
+  incoming_taxi_data_uri: file:///opt/airflow/data/incoming/taxi_data_drop
+  bronze_taxi_data_uri: iceberg://bronze.yellow_taxi_raw
+  silver_taxi_data_uri: iceberg://silver.yellow_taxi_trips

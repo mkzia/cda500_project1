@@ -1,0 +1,44 @@
+{
+  "best_params": {
+    "class_weight": null,
+    "colsample_bytree": 0.9947547746402069,
+    "learning_rate": 0.023200867504756827,
+    "max_depth": 4,
+    "min_child_samples": 66,
+    "n_estimators": 250,
+    "num_leaves": 76,
+    "subsample": 0.6298202574719083
+  },
+  "features": [
+    "lag_1h",
+    "lag_2h",
+    "lag_24h",
+    "lag_168h",
+    "rolling_6h_mean",
+    "rolling_6h_std",
+    "rolling_24h_mean",
+    "rolling_24h_std",
+    "hour_of_day_sin",
+    "hour_of_day_cos",
+    "day_of_week_sin",
+    "day_of_week_cos",
+    "is_weekend"
+  ],
+  "mlflow_run_id": "run_20260714_033055_exp-06_lightgbm_optuna",
+  "model_name": "LightGBM",
+  "model_version": "local-v2-cost-sensitive",
+  "penalty_version": "asymmetric-v1",
+  "pickup_location_id": 237,
+  "q25": 36.0,
+  "q75": 349.0,
+  "run_name": "EXP-06_LightGBM_Optuna",
+  "test_metrics": {
+    "test_accuracy": 0.9132569558101473,
+    "test_macro_f1": 0.9172268907272553,
+    "test_mean_penalty": 1.0338243316966722,
+    "test_precision_macro": 0.9193426704172524,
+    "test_recall_macro": 0.9155756258277267,
+    "test_total_penalty": 1895.0
+  },
+  "tuned": true
+}

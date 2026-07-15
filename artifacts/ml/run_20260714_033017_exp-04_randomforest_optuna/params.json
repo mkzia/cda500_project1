@@ -1,0 +1,11 @@
+{
+  "model_family": "RandomForest",
+  "param_class_weight": null,
+  "param_max_depth": 19,
+  "param_min_samples_leaf": 3,
+  "param_n_estimators": 100,
+  "pickup_location_id": 237,
+  "q25": 36.0,
+  "q75": 349.0,
+  "tuned": "True"
+}
